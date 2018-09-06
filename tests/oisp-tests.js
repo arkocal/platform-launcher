@@ -65,7 +65,7 @@ rules[switchOnCmdName] = {
                 },
                 {
                     type: "mail",
-                    target: [ recipientEmail ]
+                    target: [ emailRecipient ]
                 }
             ],
 };
@@ -82,7 +82,7 @@ rules[switchOffCmdName] = {
                 },
                 {
                     type: "mail",
-                    target: [ recipientEmail ]
+                    target: [ emailRecipient ]
                 }
             ],
 };
@@ -161,6 +161,17 @@ process.stdout.write("__________________________________________________________
 process.stdout.write("                                                                     \n");
 process.stdout.write("                           OISP E2E TESTING                          \n".green.bold);
 process.stdout.write("_____________________________________________________________________\n".bold);
+//Callback for WSS
+var cbManager = function(){
+
+    var wssCB = null;
+    return {
+	"cb": function(message){
+	    wssCB(message)
+	},
+	"set": function(newCB){wssCB = newCB}
+    }
+}();
 
 
 describe("Waiting for OISP services to be ready ...\n".bold, function() {
@@ -235,7 +246,7 @@ describe("Waiting for OISP services to be ready ...\n".bold, function() {
                 });
             }
             else {
-                done("Cannot get Kafka offset ")
+                  done(new Error("Cannot get Kafka offset "))
             }
         });
        
@@ -699,8 +710,8 @@ describe("Creating rules ... \n".bold, function() {
             }
         })
 
-    }).timeout(20000);    
-}); 
+    }).timeout(20000);
+});
 
 describe("Sending observations and checking rules ...\n".bold, function() {
 
@@ -712,7 +723,7 @@ describe("Sending observations and checking rules ...\n".bold, function() {
 
         var index = 0;
         var nbActuations = 0;
-        
+
         process.stdout.write("    ");
 
         for (var i = 0; i < temperatureValues.length; i++) {
@@ -733,60 +744,37 @@ describe("Sending observations and checking rules ...\n".bold, function() {
             }
         };
 
-
-        helpers.connector.wsConnect(proxyConnector, deviceToken, deviceId, function(message) {
+	cbManager.set(function(message) {
             --nbActuations;
 
             var expectedActuationValue = temperatureValues[index].expectedActuation.toString();
             var componentParam = message.content.params.filter(function(param){
                 return param.name == componentParamName;
             });
+
             if(componentParam.length == 1)
             {
                 var param = componentParam[0];
                 var paramValue = param.value.toString();
 
                 if(paramValue == expectedActuationValue)
-                {
-                    helpers.mail.getEmailMessage(imap_username, imap_password, imap_host, imap_port, -1, function(err, message) {
-                        if (!err) {
-                            var lines = message.toString().split("\n");
-                            var i;
-                            for(i=0; i<lines.length; i++) {
-                                var reExecReason = /^- Reason:.*/;
-                                if ( reExecReason.test(lines[i]) ) {
-                                    var reason = lines[i].split(":")[1].trim();
-                                    if ( reason == temperatureValues[index].expectedEmailReason ) {
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if ( i==lines.length ) {
-                                done(new Error("Wrong email " + message ))
-                            }
-                            else {
-                                step();
-                            }
-                        }
-                        else {
-                            done(new Error("Wrong email " + err ))
-                        }
-                    })
+		{
+		    step();
                 }
                 else
                 {
                     done(new Error("Param value wrong. Expected: " + expectedActuationValue + " Received: " + paramValue));
                 }
-            }
+	    }
             else
             {
                 done(new Error("Did not find component param: " + componentParamName))
             }
         });
+	helpers.connector.wsConnect(proxyConnector, deviceToken, deviceId, cbManager.cb);
 
         var sendObservationAndCheckRules = function(index) {
-            
+
             process.stdout.write(".".green);
 
             helpers.devices.submitData(temperatureValues[index].value, deviceToken, accountId, deviceId, componentId, function(err, ts) {
@@ -808,9 +796,33 @@ describe("Sending observations and checking rules ...\n".bold, function() {
 
         sendObservationAndCheckRules(index);
 
-    }).timeout(2*60*1000)
+    }).timeout(5*60*1000)
 
     //---------------------------------------------------------------
+
+    it('Shall check received emails', function(done){
+	helpers.mail.waitForNewEmail(imap_username, imap_password, imap_host, imap_port, 7)
+	    .then(() => helpers.mail.getAllEmailMessages(imap_username, imap_password, imap_host, imap_port))
+	    .then( (messages) => {
+		var temperatureValuesCopy =  temperatureValues.map( (elem) => elem);
+		messages.forEach( (message) => {
+		    var lines = message.toString().split("\n");
+		    var i;
+		    lines.forEach((line) => {
+                        var reExecReason = /^- Reason:.*/;
+                        if ( reExecReason.test(line) ) {
+			    var reason = line.split(":")[1].trim();
+			    var index = temperatureValuesCopy.findIndex( (element) => {
+				return (reason == element.expectedEmailReason);
+			    })
+			    temperatureValuesCopy.splice(index, 1);
+			}
+                    })
+		})
+		assert.equal(temperatureValuesCopy.length, 3, "Received emails do not match expected emails sent from rule-engine");
+		done();
+	    }).catch( (err) => {done(err)});
+    }).timeout(30 * 1000);
 
     it('Shall check observation', function(done) {
         helpers.data.searchData(firstObservationTime, userToken, accountId, deviceId, componentId, function(err, data) {
@@ -858,6 +870,23 @@ describe("Sending observations and checking rules ...\n".bold, function() {
     }).timeout(10000);
     
 });
+
+describe("Do statistics rule subtests ...".bold,
+	 function() {
+	     var test;
+	     var descriptions = require("./subtests/statistic-rule-tests").descriptions;
+	     it(descriptions.createStatisticsRules,function(done) {
+		 test = require("./subtests/statistic-rule-tests").test(userToken, accountId, deviceId, deviceToken, cbManager);
+		 test.createStatisticsRules(done);
+             }).timeout(10000)
+	     it(descriptions.sendObservations,function(done) {
+		 test.sendObservations(done);
+             }).timeout(50000);
+	     it(descriptions.cleanup,function(done) {
+		 test.cleanup(done);
+	     }).timeout(10000);
+         });
+
 
 describe("Geting and manage alerts ... \n".bold, function(){
 
@@ -996,7 +1025,6 @@ describe("update rules and create draft rules ... \n".bold, function(){
 })
 
 describe("Adding user and posting email ...\n".bold, function() {
-
     it("Shall add a new user and post email", function(done) {
         assert.isNotEmpty(imap_username, "no email provided");
         assert.isNotEmpty(imap_password, "no password provided");
@@ -1012,43 +1040,40 @@ describe("Adding user and posting email ...\n".bold, function() {
     })
 
     it("Shall activate user with token", function(done) {
-        helpers.mail.getEmailMessage(imap_username, imap_password, imap_host, imap_port, -1, function(err, message) {
-            if (!err) {
-                var regexp = /token=\w*?\r/
-                var activationline = regexp.exec(message.toString());
+	helpers.mail.waitForNewEmail(imap_username, imap_password, imap_host, imap_port, 1)
+	    .then(() => helpers.mail.getEmailMessage(imap_username, imap_password, imap_host, imap_port, -1))
+	    .then(function(message) {
+                var regexp = /token=\w*?\r/;
+		var activationline = regexp.exec(message.toString());
                 var rawactivation = activationline[0].split("token=")[1].toString();
                 var activationToken = rawactivation.replace(/\r/, '')
                 activationToken = activationToken.substring(2)
 
                 if ( activationToken === null) {
-                    done(new Error("Wrong email " + message ))
+		    done(new Error("Wrong email " + message ))
                 }
                 else {
-                    assert.isString(activationToken,'activationToken is not string')
+		    assert.isString(activationToken,'activationToken is not string')
 
-                    helpers.users.activateUser(activationToken, function(err, response) {
+		    helpers.users.activateUser(activationToken, function(err, response) {
                         if (err) {
-                            done(new Error("Cannot activate user: " + err));
+			    done(new Error("Cannot activate user: " + err));
                         } else {
-                            assert.equal(response.status, 'OK', 'cannot activate user')
+			    assert.equal(response.status, 'OK', 'cannot activate user')
 
-                            helpers.auth.login(imap_username, imap_password, function(err, token) {
+			    helpers.auth.login(imap_username, imap_password, function(err, token) {
                                 if (err) {
-                                    done(new Error("Cannot authenticate receiver: " + err));
+				    done(new Error("Cannot authenticate receiver: " + err));
                                 } else {
-                                    receiverToken = token;
-                                    done();
-                                }   
-                            })
+				    receiverToken = token;
+				    done();
+                                }
+			    })
                         }
-                    });
+		    });
                 }
-            }
-            else {
-                done(new Error("Wrong email " + err ))
-            }
-        })
-    }).timeout( 60 * 1000);        
+            }).catch(function(err){done(err)});
+    }).timeout( 60 * 1000);
 
     it('Shall create receiver account', function(done) {
         assert.notEqual(receiverToken, null, "Invalid user token")
@@ -1075,11 +1100,13 @@ describe("Invite receiver ...\n".bold, function() {
             if (err) {
                 done(new Error("Cannot create invitation: " + err));
             } else {
-                assert.equal(response.email, imap_username, 'send invite to wrong name')
-                done();
+                assert.equal(response.email, imap_username, 'send invite to wrong name');
+		helpers.mail.waitAndConsumeEmailMessage(imap_username, imap_password, imap_host, imap_port).then(function(message){
+                    done();
+		}). catch(function(err){done(err)});
             }
         })
-    })
+    }).timeout( 30 * 1000);
 
     
     it('Shall get all invitations', function(done){
@@ -1104,13 +1131,15 @@ describe("Invite receiver ...\n".bold, function() {
                     if (err) {
                         done(new Error("Cannot create invitation: " + err));
                     } else {
-                        assert.equal(response.email, imap_username, 'send invite to wrong name')
-                        done();
+                        assert.equal(response.email, imap_username, 'send invite to wrong name');
+			helpers.mail.waitAndConsumeEmailMessage(imap_username, imap_password, imap_host, imap_port).then(function(message){
+                            done();
+			})
                     }
                 })
             }
-        })        
-    })
+        })
+    }).timeout(30 * 1000);
 
     it('Shall get specific invitations', function(done){
         var getInvitation = function(cb){
@@ -1161,12 +1190,14 @@ describe("Invite receiver ...\n".bold, function() {
             if (err) {
                 done(new Error('cannot request activation:' + err));
             } else {
-                assert.equal(response.status, 'OK')
-        		done();
+                    assert.equal(response.status, 'OK')
+		    helpers.mail.waitAndConsumeEmailMessage(imap_username, imap_password, imap_host, imap_port).then(function(message){
+			done();
+		    })
             }
         })
-    })
-    
+    }).timeout( 30 * 1000);
+
     it('Shall get id of receiver and change privilege', function (done) {
         helpers.auth.tokenInfo(receiverToken, function (err, response) {
             if (err) {
@@ -1202,7 +1233,8 @@ describe("Invite receiver ...\n".bold, function() {
 describe("change password and delete receiver ... \n".bold, function(){
 
     it('Shall request change receiver password', function(done) {
-        helpers.users.requestUserPasswordChange(imap_username, function(err, response) {
+	var username = process.env.USERNAME;
+	helpers.users.requestUserPasswordChange(username, function(err, response) {
             if (err) {
                 done(new Error("Cannot request change password : " + err));
             } else {
@@ -1213,36 +1245,36 @@ describe("change password and delete receiver ... \n".bold, function(){
     })
 
     it('Shall update receiver password', function(done) {
-        helpers.mail.getEmailMessage(imap_username, imap_password, imap_host, imap_port, -1, function(err, message) {
-            var regexp = /token=\w*?\r/
-            var activationline = regexp.exec(message.toString());
-            var rawactivation = activationline[0].split("token=")[1].toString();
-            var activationToken = rawactivation.replace(/\r/, '')
-            activationToken = activationToken.substring(2)
+	helpers.mail.waitForNewEmail(imap_username, imap_password, imap_host, imap_port, 1)
+	    .then(() => helpers.mail.getEmailMessage(imap_username, imap_password, imap_host, imap_port, -1))
+	    .then(function(message) {
+		var regexp = /token=\w*?\r/;
+		var activationline = regexp.exec(message.toString());
+		var rawactivation = activationline[0].split("token=")[1].toString();
+		var activationToken = rawactivation.replace(/\r/, '')
+		activationToken = activationToken.substring(2)
 
-            if ( activationToken === null) {
-                done(new Error("Wrong email " + message ))
-            }
-            else {
-                assert.isString(activationToken,'activationToken is not string')
-
-                imap_password = 'Receiver12345'
-
-                helpers.users.updateUserPassword(activationToken, imap_password, function(err, response) {
-                    if (err) {
-                        done(new Error("Cannot update receiver password : " + err));
-                    } else {
-                       	assert.equal(response.status, 'OK', 'status error')
-                        done();
-                    }
-                })
-            }
-        });
+		if ( activationToken === null) {
+                    done(new Error("Wrong email " + message ))
+		}
+		else {
+                    assert.isString(activationToken,'activationToken is not string')
+                    var password = 'Receiver12345'
+                    helpers.users.updateUserPassword(activationToken, password, function(err, response) {
+			if (err) {
+                            done(new Error("Cannot update receiver password : " + err));
+			} else {
+			    assert.equal(response.status, 'OK', 'status error')
+                            done();
+			}
+                    })
+		}
+            }).catch(function(err){done(err)});
     }).timeout(2 * 60 * 1000);
 
     it('Shall change password', function(done) {
         var username = process.env.USERNAME;
-        var oldPasswd = process.env.PASSWORD;
+	var oldPasswd = "Receiver12345";
         var newPasswd = 'oispnewpasswd2'
 
         helpers.users.changeUserPassword(userToken, username, oldPasswd, newPasswd, function(err, response) {
