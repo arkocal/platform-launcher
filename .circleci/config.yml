@@ -188,7 +188,7 @@ workflows:
   version: 2.1
   workflow:
     jobs:
-      - build:
+      - build-nightly:
           filters:
             branches:
               ignore:
@@ -201,14 +201,14 @@ workflows:
   nightly:
     triggers:
       - schedule:
-          cron: "0 0 * * *"
+          cron: "37 10 * * *"
           filters:
             branches:
               only:
-                - develop
+                - test-nightly-ci
     jobs:
       - build-nightly:
           filters:
             branches:
               only:
-                - develop
+                - test-nightly-ci
