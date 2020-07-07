@@ -13,7 +13,7 @@ spec:
     spec:
       serviceAccountName: beamservices-operator
       containers:
-      - image: oisp/services_operator:{{ .Values.tag }}
+      - image: oisp/services-operator:latest #{{ .Values.tag }}
         name: services-operator
         env:
         - name: OISP_FRONTEND_CONFIG
@@ -91,6 +91,8 @@ spec:
             cpu: 50m
           limits:
             cpu: 50m
+      imagePullSecrets:
+        - name: dockercred
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -108,4 +110,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: beamservices-operator
-    namespace: {{.Release.Namespace}}
+    namespace: oisp # {{.Release.Namespace}}
