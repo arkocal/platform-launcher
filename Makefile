@@ -244,8 +244,8 @@ wait-until-ready:
 import-images:
 	$(foreach image,$(CONTAINERS), \
 		printf $(image); \
-		docker tag $(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) k3d-oisp.localhost:5000/$(image):$(DOCKER_TAG) && \
-		docker push k3d-oisp.localhost:5000/$(image):$(DOCKER_TAG) \
+		docker tag $(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) k3d-oisp.localhost:5000/$(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) && \
+		docker push k3d-oisp.localhost:5000/$(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) \
 	)
 #	@$(foreach image,$(EXT_CONTAINERS), \
 		arr=( $(subst ;, ,$(image)) ); \
