@@ -97,7 +97,11 @@ spec:
     spec:
       containers:
       - name: create-checkpointing-dir
+        {{ if .Values.use_local_registry }}
+        image: k3d-oisp.localhost:12345/oisp/backup-service:{{ .Values.tag }}
+        {{ else }}
         image: {{ .Values.imagePrefix }}/backup-service:{{ .Values.tag }}
+        {{ end }}
         args:
         - /bin/sh
         - -c
