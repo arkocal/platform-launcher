@@ -17,7 +17,7 @@ printf "\n"
 
 printf "\033[1mInstalling k3d docker repo\n"
 printf -- "-----------------------\033[0m\n"
-k3d registry create oisp.localhost
+k3d registry create oisp.localhost -p 12345
 echo "Adding to /etc/hosts:"
 echo "" | sudo tee -a /etc/hosts
 echo "127.0.0.1 k3d-oisp.localhost" | sudo tee -a /etc/hosts

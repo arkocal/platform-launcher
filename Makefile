@@ -244,8 +244,8 @@ wait-until-ready:
 import-images:
 	$(foreach image,$(CONTAINERS), \
 		printf $(image); \
-		docker tag $(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) k3d-oisp.localhost:5000/$(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) && \
-		docker push k3d-oisp.localhost:5000/$(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) \
+		docker tag $(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) k3d-oisp.localhost:12345/$(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) && \
+		docker push k3d-oisp.localhost:12345/$(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) \
 	)
 #	@$(foreach image,$(EXT_CONTAINERS), \
 		arr=( $(subst ;, ,$(image)) ); \
@@ -280,7 +280,7 @@ open-shell:
 	@$(call msg, "Opening shell to pod: $(SELECTED_POD)")
 	kubectl -n $(NAMESPACE) exec -it $(SELECTED_POD) /bin/bash
 
-## restart-cluster: Create a new k3s cluster from scratch and
+
 ##     install the dependencies for OISP
 ##
 restart-cluster:
