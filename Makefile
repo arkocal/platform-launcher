@@ -242,13 +242,12 @@ wait-until-ready:
 ## import-images: Import images listed in CONTAINERS into local cluster
 ##
 import-images:
-	@$(foreach image,$(CONTAINERS), \
+	$(foreach image,$(CONTAINERS), \
 		printf $(image); \
-		docker save $(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) -o /tmp/$(image) && printf " is saved" && \
-		docker cp /tmp/$(image) $(K3S_NODE):/tmp/$(image) && printf ", copied" && \
-		docker exec -it $(K3S_NODE) ctr image import /tmp/$(image) >> /dev/null && printf ", imported\n"; \
+		docker tag $(DOCKER_PREFIX)/$(image):$(DOCKER_TAG) k3d-oisp.localhost:5000/$(image):$(DOCKER_TAG) && \
+		docker push k3d-oisp.localhost:5000/$(image):$(DOCKER_TAG) \
 	)
-	@$(foreach image,$(EXT_CONTAINERS), \
+#	@$(foreach image,$(EXT_CONTAINERS), \
 		arr=( $(subst ;, ,$(image)) ); \
 		printf $${arr[1]};  \
 		docker pull $${arr[1]} > /dev/null && printf ", pulled" && \
